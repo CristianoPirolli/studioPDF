@@ -1,0 +1,4 @@
+﻿Flask>=2.3
+pypdf>=4.0
+waitress>=2.1
+ocrmypdf>=15.0

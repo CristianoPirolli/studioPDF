@@ -1,0 +1,78 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Merge PDFs com Cabeçalho</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="bg-orbs"></div>
+  <header class="hero">
+    <div class="hero-text">
+      <div class="pill">PDF Studio</div>
+      <h1>Junte PDFs com um cabeçalho fixo em segundos</h1>
+      <p>Carregue um PDF “cabeçalho” e aplique como primeira página em todos os arquivos anexados.</p>
+      <div class="hero-actions">
+        <button class="btn primary" id="btn-save-header" type="button">Salvar cabeçalho</button>
+        <button class="btn accent" id="btn-merge" type="button">Gerar PDFs finais</button>
+      </div>
+      <div class="status" id="status"></div>
+    </div>
+    <div class="hero-visual">
+      <div class="stack">
+        <div class="card preview-card">
+          <div class="card-title">Cabeçalho</div>
+          <div class="preview dropzone" id="header-preview" data-drop="header">
+            <div class="placeholder">Prévia do cabeçalho</div>
+            <div class="drop-overlay">
+              <div class="drop-text">Solte para anexar</div>
+            </div>
+          </div>
+          <label class="file-btn">
+            <input type="file" id="fixed-input" accept="application/pdf" />
+            Escolher cabeçalho
+          </label>
+        </div>
+        <div class="card preview-card">
+          <div class="card-title">Anexos</div>
+          <div class="preview-grid dropzone" id="attachments-preview" data-drop="attachments">
+            <div class="placeholder">Prévia dos anexos</div>
+            <div class="drop-overlay">
+              <div class="drop-text">Solte para anexar</div>
+            </div>
+          </div>
+          <label class="file-btn">
+            <input type="file" id="attachments-input" accept="application/pdf" multiple />
+            Escolher anexos
+          </label>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Resultados</h2>
+        <p>Baixe os PDFs finais já com o cabeçalho aplicado.</p>
+      </div>
+      <div class="results" id="results"></div>
+    </section>
+
+    <section class="panel tips">
+      <div class="panel-header">
+        <h2>Dicas rápidas</h2>
+        <p>Tenha mais controle sobre o processo.</p>
+      </div>
+      <ul class="tip-list">
+        <li>O cabeçalho pode ser trocado a qualquer momento.</li>
+        <li>Pré-visualize todos os PDFs antes de gerar.</li>
+        <li>Arquivos grandes podem levar alguns segundos.</li>
+      </ul>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
