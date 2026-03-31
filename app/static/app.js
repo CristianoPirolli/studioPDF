@@ -11,6 +11,8 @@ let headerDirty = false;
 let headerSaved = false;
 let headerObjectUrl = null;
 let attachmentUrls = [];
+let attachmentFiles = [];
+let dragSrcIndex = null;
 
 function setStatus(message, tone = "") {
   statusEl.textContent = message;
@@ -58,23 +60,63 @@ function renderHeaderPreview(file) {
 function renderAttachmentsPreview(files) {
   const overlay = attachmentsPreview.querySelector(".drop-overlay");
   attachmentsPreview.innerHTML = "";
-  if (overlay) {
-    attachmentsPreview.appendChild(overlay);
-  }
   attachmentUrls.forEach((url) => URL.revokeObjectURL(url));
   attachmentUrls = [];
+  attachmentFiles = Array.from(files);
 
-  if (!files.length) {
-    attachmentsPreview.innerHTML = `<div class="placeholder">Prévia dos anexos</div>`;
+  if (overlay) attachmentsPreview.appendChild(overlay);
+
+  if (!attachmentFiles.length) {
+    const ph = document.createElement("div");
+    ph.className = "placeholder";
+    ph.textContent = "Prévia dos anexos";
+    attachmentsPreview.appendChild(ph);
     return;
   }
 
-  Array.from(files).forEach((file) => {
+  attachmentFiles.forEach((file, index) => {
     const tile = document.createElement("div");
     tile.className = "preview-tile";
+    tile.draggable = true;
     const url = URL.createObjectURL(file);
     attachmentUrls.push(url);
-    tile.innerHTML = `<embed src="${url}" type="application/pdf" />`;
+    tile.innerHTML = `
+      <div class="drag-handle">&#8942;&#8942;</div>
+      <embed src="${url}" type="application/pdf" />
+      <div class="tile-name">${file.name}</div>
+    `;
+
+    tile.addEventListener("dragstart", (e) => {
+      dragSrcIndex = index;
+      tile.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+    });
+
+    tile.addEventListener("dragend", () => {
+      tile.classList.remove("dragging");
+      attachmentsPreview.querySelectorAll(".preview-tile").forEach((t) => t.classList.remove("drag-over"));
+    });
+
+    tile.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      attachmentsPreview.querySelectorAll(".preview-tile").forEach((t) => t.classList.remove("drag-over"));
+      tile.classList.add("drag-over");
+    });
+
+    tile.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      tile.classList.remove("drag-over");
+      if (dragSrcIndex === null || dragSrcIndex === index) return;
+      const moved = attachmentFiles.splice(dragSrcIndex, 1)[0];
+      attachmentFiles.splice(index, 0, moved);
+      dragSrcIndex = null;
+      setFilesOnInput(attachmentsInput, attachmentFiles);
+      renderAttachmentsPreview(attachmentFiles);
+    });
+
     attachmentsPreview.appendChild(tile);
   });
 }
