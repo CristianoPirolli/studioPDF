@@ -13,6 +13,7 @@ let headerObjectUrl = null;
 let attachmentUrls = [];
 let attachmentFiles = [];
 let dragSrcIndex = null;
+let pollInterval = null;
 
 function setStatus(message, tone = "") {
   statusEl.textContent = message;
@@ -21,6 +22,79 @@ function setStatus(message, tone = "") {
 
 function clearResults() {
   results.innerHTML = "";
+}
+
+const progressSection = document.getElementById("progress-section");
+const progressFill = document.getElementById("progress-fill");
+const progressLabel = document.getElementById("progress-label");
+const progressCount = document.getElementById("progress-count");
+
+function showProgress(total) {
+  progressSection.classList.remove("hidden");
+  progressFill.style.width = "0%";
+  progressLabel.textContent = "Iniciando...";
+  progressCount.textContent = `0 / ${total}`;
+}
+
+function updateProgress(done, total, current) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  progressFill.style.width = `${pct}%`;
+  progressCount.textContent = `${done} / ${total}`;
+  progressLabel.textContent = current ? `Processando: ${current}` : "Finalizando...";
+}
+
+function hideProgress() {
+  progressSection.classList.add("hidden");
+}
+
+function renderResults(jobId, files, errors) {
+  clearResults();
+
+  if (files.length > 1) {
+    const zipBtn = document.createElement("a");
+    zipBtn.className = "btn primary zip-btn";
+    zipBtn.href = `/api/zip/${jobId}`;
+    zipBtn.textContent = `Baixar todos em ZIP (${files.length} arquivos)`;
+    results.appendChild(zipBtn);
+  }
+
+  files.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "result-item";
+    row.innerHTML = `
+      <div class="result-preview">
+        <embed src="${item.preview_url || item.url}" type="application/pdf" />
+      </div>
+      <div class="result-name">${item.name}</div>
+      <a href="${item.url}">Download</a>
+    `;
+    results.appendChild(row);
+  });
+
+  if (errors && errors.length) {
+    setStatus(`Gerado com avisos: ${errors.join("; ")}`, "warn");
+  } else {
+    setStatus("PDFs gerados com sucesso.");
+  }
+}
+
+function startPolling(jobId, total) {
+  showProgress(total);
+  pollInterval = setInterval(async () => {
+    try {
+      const resp = await fetch(`/api/progress/${jobId}`);
+      const data = await resp.json();
+      updateProgress(data.done ?? 0, data.total ?? total, data.current ?? "");
+      if (data.status === "done") {
+        clearInterval(pollInterval);
+        pollInterval = null;
+        hideProgress();
+        renderResults(jobId, data.files || [], data.errors || []);
+      }
+    } catch (_) {
+      // network hiccup, retry on next tick
+    }
+  }, 500);
 }
 
 function cleanupUrls() {
@@ -180,7 +254,7 @@ async function mergePdfs() {
   Array.from(files).forEach((file) => formData.append("attachments", file));
 
   btnMerge.disabled = true;
-  setStatus("Gerando PDFs...");
+  setStatus("Enviando arquivos...");
 
   const resp = await fetch("/api/merge", { method: "POST", body: formData });
   const data = await resp.json();
@@ -196,34 +270,8 @@ async function mergePdfs() {
   }
 
   clearResults();
-
-  if (data.files.length > 1) {
-    const zipBtn = document.createElement("a");
-    zipBtn.className = "btn primary zip-btn";
-    zipBtn.href = `/api/zip/${data.job_id}`;
-    zipBtn.textContent = `Baixar todos em ZIP (${data.files.length} arquivos)`;
-    results.appendChild(zipBtn);
-  }
-
-  data.files.forEach((item) => {
-    const row = document.createElement("div");
-    row.className = "result-item";
-    row.innerHTML = `
-      <div class="result-preview">
-        <embed src="${item.preview_url || item.url}" type="application/pdf" />
-      </div>
-      <div class="result-name">${item.name}</div>
-      <a href="${item.url}">Download</a>
-    `;
-    results.appendChild(row);
-  });
-
-  if (data.errors && data.errors.length) {
-    setStatus(`Gerado com avisos: ${data.errors.join("; ")}`, "warn");
-  } else {
-    setStatus("PDFs gerados com sucesso.");
-  }
-
+  setStatus(`Processando ${data.total} arquivo(s)...`);
+  startPolling(data.job_id, data.total);
   clearAttachmentsSelection();
 }
 

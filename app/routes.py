@@ -1,5 +1,6 @@
 ﻿import io
 import shutil
+import threading
 import time
 import uuid
 import zipfile
@@ -14,6 +15,21 @@ from app.services.pdf_merge import PdfMergeError, apply_ocr, merge_with_header, 
 
 bp = Blueprint("main", __name__)
 ALLOWED_EXTENSIONS = {".pdf"}
+
+_jobs: dict = {}
+_jobs_lock = threading.Lock()
+
+
+def _set_progress(job_id: str, **kwargs) -> None:
+    with _jobs_lock:
+        if job_id not in _jobs:
+            _jobs[job_id] = {}
+        _jobs[job_id].update(kwargs)
+
+
+def _get_progress(job_id: str) -> dict:
+    with _jobs_lock:
+        return dict(_jobs.get(job_id, {}))
 
 
 def _tmp_root() -> Path:
@@ -50,6 +66,9 @@ def _cleanup_old_dirs():
                 mtime = path.stat().st_mtime
                 if now - mtime > ttl_seconds:
                     shutil.rmtree(path, ignore_errors=True)
+                    if group == "jobs":
+                        with _jobs_lock:
+                            _jobs.pop(path.name, None)
             except Exception:
                 continue
 
@@ -119,6 +138,68 @@ def clear_fixed():
     return jsonify({"ok": True})
 
 
+def _process_job(
+    job_id: str,
+    job_dir: Path,
+    header_path: Path,
+    session_dir: Path,
+    file_infos: List[dict],
+    ocr_enabled: bool,
+    ocr_langs: str,
+) -> None:
+    results: List[dict] = []
+    with _jobs_lock:
+        errors: List[str] = list(_jobs[job_id].get("errors", []))
+
+    for fi in file_infos:
+        safe_name = fi["safe_name"]
+        input_path: Path = fi["input_path"]
+        output_name = f"merged__{safe_name}"
+        output_path = job_dir / output_name
+        ocr_attach: Path | None = None
+
+        _set_progress(job_id, current=safe_name)
+
+        try:
+            validate_pdf(input_path)
+
+            h_path = header_path
+            a_path = input_path
+
+            if ocr_enabled:
+                ocr_header = session_dir / "header_ocr.pdf"
+                header_log = job_dir / "ocr__header.log"
+                if not ocr_header.exists() or ocr_header.stat().st_mtime < header_path.stat().st_mtime:
+                    apply_ocr(header_path, ocr_header, ocr_langs, header_log)
+                h_path = ocr_header
+
+                ocr_attach = job_dir / f"ocr__{safe_name}"
+                attach_log = job_dir / f"ocr__attach__{safe_name}.log"
+                apply_ocr(a_path, ocr_attach, ocr_langs, attach_log)
+                a_path = ocr_attach
+
+            merge_with_header(h_path, a_path, output_path)
+            results.append({
+                "name": output_name,
+                "url": f"/download/{job_id}/{output_name}",
+                "preview_url": f"/preview/{job_id}/{output_name}",
+            })
+        except PdfMergeError as exc:
+            with _jobs_lock:
+                _jobs[job_id]["errors"].append(f"{safe_name}: {exc}")
+                errors = list(_jobs[job_id]["errors"])
+        finally:
+            input_path.unlink(missing_ok=True)
+            if ocr_attach is not None:
+                ocr_attach.unlink(missing_ok=True)
+
+        with _jobs_lock:
+            _jobs[job_id]["done"] += 1
+            _jobs[job_id]["files"] = results[:]
+
+    _set_progress(job_id, status="done", current="", files=results)
+
+
 @bp.post("/api/merge")
 def merge_pdfs():
     if not _fixed_path().exists():
@@ -136,78 +217,46 @@ def merge_pdfs():
     job_dir = _job_dir(job_id)
     job_dir.mkdir(parents=True, exist_ok=True)
 
-    results = []
-    errors: List[str] = []
+    file_infos: List[dict] = []
+    early_errors: List[str] = []
 
     for f in valid_files:
         if not _allowed(f.filename):
-            errors.append(f"{f.filename}: apenas PDF")
+            early_errors.append(f"{f.filename}: apenas PDF")
             continue
         if not _file_size_ok(f):
-            errors.append(f"{f.filename}: excede limite")
+            early_errors.append(f"{f.filename}: excede limite")
             continue
-
         safe_name = secure_filename(f.filename)
         input_path = job_dir / f"input__{safe_name}"
-        output_name = f"merged__{safe_name}"
-        output_path = job_dir / output_name
-
         f.save(input_path)
-        try:
-            validate_pdf(input_path)
+        file_infos.append({"safe_name": safe_name, "input_path": input_path})
 
-            header_path = _fixed_path()
-            attach_path = input_path
+    if not file_infos:
+        return jsonify({"error": "Falha ao gerar PDFs", "details": early_errors}), 400
 
-            # Debug log
-            debug_log = job_dir / "debug.log"
-            with debug_log.open("a", encoding="utf-8") as f:
-                f.write(f"OCR_ENABLED: {current_app.config.get('OCR_ENABLED', False)}\n")
-                f.write(f"OCR_LANGS: {current_app.config.get('OCR_LANGS', 'N/A')}\n")
+    header_path = _fixed_path()
+    session_dir = _session_dir()
+    ocr_enabled = current_app.config.get("OCR_ENABLED", False)
+    ocr_langs = current_app.config.get("OCR_LANGS", "por")
 
-            if current_app.config.get("OCR_ENABLED", False):
-                with debug_log.open("a", encoding="utf-8") as f:
-                    f.write("Entrando no bloco de OCR\n")
+    _set_progress(job_id, status="processing", total=len(file_infos), done=0, current="", files=[], errors=early_errors)
 
-                ocr_langs = current_app.config.get("OCR_LANGS", "por")
+    threading.Thread(
+        target=_process_job,
+        args=(job_id, job_dir, header_path, session_dir, file_infos, ocr_enabled, ocr_langs),
+        daemon=True,
+    ).start()
 
-                ocr_header = _session_dir() / "header_ocr.pdf"
-                header_log = job_dir / "ocr__header.log"
-                if not ocr_header.exists() or ocr_header.stat().st_mtime < header_path.stat().st_mtime:
-                    with debug_log.open("a", encoding="utf-8") as f:
-                        f.write(f"Aplicando OCR no header: {header_path}\n")
-                    apply_ocr(header_path, ocr_header, ocr_langs, header_log)
-                header_path = ocr_header
+    return jsonify({"job_id": job_id, "total": len(file_infos)})
 
-                ocr_attach = job_dir / f"ocr__{safe_name}"
-                attach_log = job_dir / f"ocr__attach__{safe_name}.log"
-                with debug_log.open("a", encoding="utf-8") as f:
-                    f.write(f"Aplicando OCR no anexo: {attach_path}\n")
-                apply_ocr(attach_path, ocr_attach, ocr_langs, attach_log)
-                attach_path = ocr_attach
-                with debug_log.open("a", encoding="utf-8") as f:
-                    f.write("OCR aplicado com sucesso\n")
 
-            merge_with_header(header_path, attach_path, output_path)
-            results.append({
-                "name": output_name,
-                "url": f"/download/{job_id}/{output_name}",
-                "preview_url": f"/preview/{job_id}/{output_name}",
-            })
-        except PdfMergeError as exc:
-            debug_log = job_dir / "debug.log"
-            with debug_log.open("a", encoding="utf-8") as f:
-                f.write(f"ERRO: {exc}\n")
-            errors.append(f"{safe_name}: {exc}")
-        finally:
-            input_path.unlink(missing_ok=True)
-            if "ocr_attach" in locals():
-                ocr_attach.unlink(missing_ok=True)
-
-    if not results:
-        return jsonify({"error": "Falha ao gerar PDFs", "details": errors}), 400
-
-    return jsonify({"job_id": job_id, "files": results, "errors": errors})
+@bp.get("/api/progress/<job_id>")
+def job_progress(job_id: str):
+    data = _get_progress(job_id)
+    if not data:
+        return jsonify({"error": "Job não encontrado"}), 404
+    return jsonify(data)
 
 
 def _resolve_job_file(job_id: str, filename: str) -> Path:
