@@ -6,6 +6,7 @@ const results = document.getElementById("results");
 const statusEl = document.getElementById("status");
 const btnSaveHeader = document.getElementById("btn-save-header");
 const btnMerge = document.getElementById("btn-merge");
+const ocrCheckbox = document.getElementById("ocr-checkbox");
 
 let headerDirty = false;
 let headerSaved = false;
@@ -252,6 +253,7 @@ async function mergePdfs() {
 
   const formData = new FormData();
   Array.from(files).forEach((file) => formData.append("attachments", file));
+  formData.append("ocr_enabled", ocrCheckbox.checked ? "true" : "false");
 
   btnMerge.disabled = true;
   setStatus("Enviando arquivos...");

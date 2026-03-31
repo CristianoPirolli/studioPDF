@@ -463,6 +463,50 @@ body {
   font-weight: 600;
 }
 
+.ocr-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 12px;
+  user-select: none;
+}
+
+.ocr-toggle input {
+  display: none;
+}
+
+.ocr-toggle-track {
+  width: 36px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 99px;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.ocr-toggle input:checked + .ocr-toggle-track {
+  background: var(--primary);
+}
+
+.ocr-toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.ocr-toggle input:checked + .ocr-toggle-track .ocr-toggle-thumb {
+  transform: translateX(16px);
+}
+
 .hidden {
   display: none !important;
 }

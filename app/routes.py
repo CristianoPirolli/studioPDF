@@ -237,7 +237,7 @@ def merge_pdfs():
 
     header_path = _fixed_path()
     session_dir = _session_dir()
-    ocr_enabled = current_app.config.get("OCR_ENABLED", False)
+    ocr_enabled = request.form.get("ocr_enabled", "false") == "true"
     ocr_langs = current_app.config.get("OCR_LANGS", "por")
 
     _set_progress(job_id, status="processing", total=len(file_infos), done=0, current="", files=[], errors=early_errors)
