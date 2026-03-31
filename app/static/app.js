@@ -154,6 +154,15 @@ async function mergePdfs() {
   }
 
   clearResults();
+
+  if (data.files.length > 1) {
+    const zipBtn = document.createElement("a");
+    zipBtn.className = "btn primary zip-btn";
+    zipBtn.href = `/api/zip/${data.job_id}`;
+    zipBtn.textContent = `Baixar todos em ZIP (${data.files.length} arquivos)`;
+    results.appendChild(zipBtn);
+  }
+
   data.files.forEach((item) => {
     const row = document.createElement("div");
     row.className = "result-item";

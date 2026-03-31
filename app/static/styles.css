@@ -428,6 +428,16 @@ body {
   font-weight: 600;
 }
 
+.zip-btn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  margin-bottom: 16px;
+  text-decoration: none;
+  padding: 14px;
+  font-size: 1rem;
+}
+
 .tip-list {
   margin: 16px 0 0;
   padding-left: 18px;

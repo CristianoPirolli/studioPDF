@@ -2,6 +2,7 @@
 import shutil
 import time
 import uuid
+import zipfile
 from pathlib import Path
 from typing import List
 
@@ -228,3 +229,27 @@ def preview(job_id: str, filename: str):
     if not file_path.exists():
         return jsonify({"error": "Arquivo não encontrado"}), 404
     return send_file(file_path, as_attachment=False, download_name=filename)
+
+
+@bp.get("/api/zip/<job_id>")
+def download_zip(job_id: str):
+    job_dir = _job_dir(job_id)
+    if not job_dir.exists():
+        return jsonify({"error": "Job não encontrado"}), 404
+
+    merged_files = sorted(job_dir.glob("merged__*.pdf"))
+    if not merged_files:
+        return jsonify({"error": "Nenhum arquivo para zipar"}), 404
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file_path in merged_files:
+            zf.write(file_path, file_path.name)
+    zip_buffer.seek(0)
+
+    return send_file(
+        zip_buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"pdfs_{job_id[:8]}.zip",
+    )
